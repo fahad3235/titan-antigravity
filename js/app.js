@@ -13,6 +13,37 @@
   var skillQ = '', skillFamily = 'All';
   var ledgerCat = 'All';
 
+  /* ---------------- LLM settings: mode + model in one key, API key separate ---------------- */
+  /* The API key is stored ONLY in this browser's localStorage, under its own
+     key. It is never put in mission data, never exported, never logged,
+     and never rendered back into the page (the key field is never prefilled). */
+  var LLM_SETTINGS_KEY = 'titan-antigravity-llm-settings-v1';
+  var LLM_API_KEY = 'titan-antigravity-llm-key-v1';
+  function defaultLlmSettings() {
+    return { mode: 'sim', model: window.TITAN_LLM ? window.TITAN_LLM.DEFAULT_MODEL : 'nvidia/nemotron-3-ultra-550b-a55b' };
+  }
+  function loadLlmSettings() {
+    try {
+      var raw = localStorage.getItem(LLM_SETTINGS_KEY);
+      if (!raw) return defaultLlmSettings();
+      var s = JSON.parse(raw);
+      var out = defaultLlmSettings();
+      if (s.mode === 'sim' || s.mode === 'llm') out.mode = s.mode;
+      if (typeof s.model === 'string' && window.TITAN_LLM && window.TITAN_LLM.validateModelId(s.model)) out.model = s.model;
+      return out;
+    } catch (e) { return defaultLlmSettings(); }
+  }
+  function saveLlmSettings() {
+    try { localStorage.setItem(LLM_SETTINGS_KEY, JSON.stringify(llmSettings)); } catch (e) { /* storage blocked */ }
+  }
+  function getStoredKey() {
+    try { return localStorage.getItem(LLM_API_KEY) || ''; } catch (e) { return ''; }
+  }
+  function setStoredKey(k) {
+    try { if (k) localStorage.setItem(LLM_API_KEY, k); else localStorage.removeItem(LLM_API_KEY); } catch (e) { /* storage blocked */ }
+  }
+  var llmSettings = loadLlmSettings();
+
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -63,8 +94,9 @@
         '<td>' + esc(m.status) + '</td><td>' + m.claims.length + ' claims</td>' +
         '<td><button class="btn small ghost" data-action="select" data-id="' + m.id + '">Open</button></td></tr>';
     }).join('');
-    return '<h1>Mission Control</h1><p class="lede">NEXUS coordinates. Deterministic simulations execute. ' +
-      'Every claim must cite evidence. Nothing here is a real agent, a real LLM, or a production action.</p>' +
+    return '<h1>Mission Control</h1><p class="lede">NEXUS coordinates. Deterministic simulation by default; ' +
+      'optional real-LLM analysis via OpenRouter in the LLM tab. ' +
+      'Every claim must cite evidence. Nothing here is a production action.</p>' +
       '<div class="grid g4">' +
       '<div class="card"><div class="stat-num">' + ms.length + '</div><div class="stat-label">Missions</div></div>' +
       '<div class="card"><div class="stat-num">' + done + '</div><div class="stat-label">Done (' + D.SEC + '32)</div></div>' +
@@ -275,6 +307,95 @@
       'It is not affiliated with Google Antigravity; \u201cAntigravity-style\u201d describes the mission-control layout only.</p></div></div>';
   }
 
+  /* ---------------- LLM settings view + run flow ---------------- */
+  function renderLlmSettings() {
+    var keyStored = !!getStoredKey();
+    return '<h1>LLM settings</h1>' + noticeHtml() +
+      '<p class="lede">Default mode is deterministic simulation. Turn on Real LLM mode to attach ' +
+      'real OpenRouter analysis to a mission run. On any failure the console falls back to ' +
+      'deterministic simulation and says so \u2014 simulated output is never presented as LLM output.</p>' +
+      '<div class="card"><h3>Mode</h3>' +
+      '<label class="flag"><input type="radio" name="llmMode" value="sim"' + (llmSettings.mode === 'sim' ? ' checked' : '') + '> Deterministic simulation (default)</label> ' +
+      '<label class="flag"><input type="radio" name="llmMode" value="llm"' + (llmSettings.mode === 'llm' ? ' checked' : '') + '> Real LLM via OpenRouter</label>' +
+      '<p class="small muted">In Real LLM mode the browser calls OpenRouter directly. Your key is stored only in this browser.</p></div>' +
+      '<div class="card"><h3>Model</h3>' +
+      '<label for="llmModel">OpenRouter model id</label>' +
+      '<input id="llmModel" value="' + esc(llmSettings.model) + '" placeholder="nvidia/nemotron-3-ultra-550b-a55b" autocomplete="off" spellcheck="false">' +
+      '<div class="toolbar"><button class="btn small ghost" data-action="llm-reset-model">Reset to default free model</button></div>' +
+      '<p class="small muted">Default: <span class="mono">nvidia/nemotron-3-ultra-550b-a55b</span> (free). Paste any OpenRouter model id. ' +
+      'Model availability changes \u2014 if a model stops working, OpenRouter returns an error and the console falls back to simulation.</p></div>' +
+      '<div class="card"><h3>API key</h3>' +
+      '<div class="warn"><b>Warning:</b> the key lives only in this browser (localStorage). It is sent only to OpenRouter, ' +
+      'never to any other site, and never included in exports. Use a key with a spend limit. Never share it. ' +
+      'Clear it when done on a shared machine.</div>' +
+      '<p>Key stored in this browser: <b>' + (keyStored ? 'YES' : 'NO') + '</b></p>' +
+      '<label for="llmKeyInput">OpenRouter API key</label>' +
+      '<input id="llmKeyInput" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your OpenRouter key">' +
+      '<div class="toolbar"><button class="btn small" data-action="llm-save-key">Save key</button>' +
+      '<button class="btn small ghost" data-action="llm-clear-key">Clear key</button></div>' +
+      '<p class="small muted">The key field is never prefilled and the stored key is never shown. Get a key from your OpenRouter dashboard (API Keys). ' +
+      'The app calls <span class="mono">https://openrouter.ai/api/v1/chat/completions</span> with Authorization, HTTP-Referer (this page), and X-Title headers.</p></div>' +
+      '<div class="card"><h3>Honesty rules for LLM output (' + D.SEC + '1, ' + D.SEC + '8, ' + D.SEC + '32)</h3><ul>' +
+      '<li>LLM claims are labeled with source <span class="mono">openrouter:&lt;model&gt;</span>, token usage, and a raw-response excerpt.</li>' +
+      '<li>LLM claims go through the same evidence gates and are capped at SUPPORTED \u2014 never VERIFIED.</li>' +
+      '<li>LLM output is a model response, not verification. It can be wrong. Review before trusting.</li></ul></div>';
+  }
+
+  function llmFallbackBanner(m, err) {
+    m.log.push({ step: m.log.length + 1, stage: 'REVIEW', text: 'LLM fallback: ' + err.message + ' Deterministic simulation output kept.' });
+    setNotice('error', 'Real LLM unavailable (' + err.code + '): ' + err.message + ' Ran deterministic simulation instead. Fix: ' + err.fix);
+  }
+
+  function runMissionFlow(m) {
+    var r = L.runMission(m);
+    if (!r.ok) { setNotice('error', r.error); render(); return; }
+    if (r.blocked) {
+      save();
+      setNotice('error', 'Run paused at EXECUTE \u2014 explicit authorization required (' + m.risk + '). Press "Record authorization + resume".');
+      render(); return;
+    }
+    if (llmSettings.mode !== 'llm') {
+      save();
+      setNotice('ok', 'Nexus Loop complete. ' + m.claims.length + ' evidence-backed claim(s). Check the done-checklist.');
+      render(); return;
+    }
+    var key = getStoredKey();
+    if (!key) {
+      llmFallbackBanner(m, { code: 'NO_KEY', message: 'No API key stored.', fix: 'Paste your OpenRouter key in the LLM tab and press Save key.' });
+      save(); render(); return;
+    }
+    var reqRes = window.TITAN_LLM.buildChatRequest({
+      model: llmSettings.model,
+      messages: [
+        { role: 'system', content: window.TITAN_LLM.buildSystemPrompt(m) },
+        { role: 'user', content: window.TITAN_LLM.buildUserPrompt(m) }
+      ],
+      temperature: 0.2, maxTokens: 1200
+    });
+    if (!reqRes.ok) {
+      llmFallbackBanner(m, { code: 'BAD_REQUEST', message: reqRes.error, fix: 'Check the model id in the LLM tab.' });
+      save(); render(); return;
+    }
+    window.TITAN_LLM.callOpenRouter({
+      apiKey: key,
+      payload: reqRes.payload,
+      fetchImpl: (typeof window.fetch === 'function' ? window.fetch.bind(window) : null),
+      referer: window.location.href
+    }).then(function (call) {
+      if (!call.ok) { llmFallbackBanner(m, call.error); save(); render(); return; }
+      var parsed = window.TITAN_LLM.parseAnalysis(call.data.content, llmSettings.model, call.data.usage);
+      var attached = 0;
+      parsed.claims.forEach(function (c) { if (L.addClaim(m, c).ok) attached++; });
+      m.log.push({ step: m.log.length + 1, stage: 'REVIEW', text: 'LLM analysis attached (model ' + llmSettings.model + ', ' + attached + ' claim(s), tokens: ' + (call.data.usage && call.data.usage.total_tokens != null ? call.data.usage.total_tokens : 'not reported') + '). Claims capped at SUPPORTED, never VERIFIED.' });
+      save();
+      setNotice('ok', 'Nexus Loop complete + LLM analysis attached (' + llmSettings.model + ', ' + attached + ' claim(s)). LLM claims are capped at SUPPORTED, never VERIFIED.');
+      render();
+    }).catch(function () {
+      llmFallbackBanner(m, { code: 'UNREACHABLE', message: 'Could not reach OpenRouter.', fix: 'Check your internet connection and retry.' });
+      save(); render();
+    });
+  }
+
   function render() {
     document.querySelectorAll('.tab').forEach(function (t) { t.classList.toggle('active', t.dataset.view === view); });
     if (view === 'dashboard') app.innerHTML = renderDashboard();
@@ -283,6 +404,12 @@
     else if (view === 'skills') app.innerHTML = renderSkills();
     else if (view === 'ledger') app.innerHTML = renderLedger();
     else if (view === 'doctrine') app.innerHTML = renderDoctrine();
+    else if (view === 'llm') app.innerHTML = renderLlmSettings();
+    var badge = document.querySelector('.sim-badge');
+    if (badge) {
+      if (llmSettings.mode === 'llm') { badge.textContent = 'LLM MODE \u00B7 OPENROUTER'; badge.classList.add('llm'); }
+      else { badge.textContent = 'SIMULATION \u00B7 NO REAL LLMs'; badge.classList.remove('llm'); }
+    }
     notice = null;
   }
 
@@ -359,13 +486,25 @@
       if (selectedId === m.id) selectedId = state.missions.length ? state.missions[0].id : null;
       save(); setNotice('ok', 'Mission deleted.'); render(); return;
     }
-    if (action === 'run' && m) {
-      var r = L.runMission(m);
-      if (!r.ok) { setNotice('error', r.error); render(); return; }
-      save();
-      setNotice(r.blocked ? 'error' : 'ok', r.blocked
-        ? 'Run paused at EXECUTE \u2014 explicit authorization required (' + m.risk + '). Press \u201cRecord authorization + resume\u201d.'
-        : 'Nexus Loop complete. ' + m.claims.length + ' evidence-backed claim(s). Check the done-checklist.');
+    if (action === 'run' && m) { runMissionFlow(m); return; }
+    if (action === 'llm-reset-model') {
+      llmSettings.model = window.TITAN_LLM.DEFAULT_MODEL;
+      saveLlmSettings(); setNotice('ok', 'Model reset to default free model.'); render(); return;
+    }
+    if (action === 'llm-save-key') {
+      var keyInput = document.getElementById('llmKeyInput');
+      var kval = keyInput ? keyInput.value : '';
+      if (!window.TITAN_LLM.validateApiKey(kval)) {
+        setNotice('error', 'Key not saved: it looks invalid (must be at least 20 characters, no spaces). Paste the full key and retry.');
+        render(); return;
+      }
+      setStoredKey(kval);
+      setNotice('ok', 'Key stored in this browser only. It is never shown again and never leaves this browser except to OpenRouter.');
+      render(); return;
+    }
+    if (action === 'llm-clear-key') {
+      setStoredKey('');
+      setNotice('ok', 'Key cleared from this browser.');
       render(); return;
     }
     if (action === 'authorize' && m) {
@@ -410,11 +549,13 @@
   app.addEventListener('input', function (e) {
     if (e.target.id === 'rosterSearch') { rosterQ = e.target.value; render(); }
     if (e.target.id === 'skillSearch') { skillQ = e.target.value; render(); }
+    if (e.target.id === 'llmModel') { llmSettings.model = e.target.value; saveLlmSettings(); }
   });
   app.addEventListener('change', function (e) {
     if (e.target.id === 'rosterDomain') { rosterDomain = e.target.value; render(); }
     if (e.target.id === 'skillFamily') { skillFamily = e.target.value; render(); }
     if (e.target.id === 'ledgerCat') { ledgerCat = e.target.value; render(); }
+    if (e.target.name === 'llmMode') { llmSettings.mode = e.target.value; saveLlmSettings(); render(); }
   });
 
   document.getElementById('skillCount').textContent = D.SKILLS.length;

@@ -2,7 +2,9 @@
    Implements TITAN NEXUS v8.1 rules: Task Contract (sec 7), evidence model (sec 8),
    risk/autonomy (sec 11), routing (sec 16), node states (sec 17), activation
    guard (sec 15: max ~5 roles), Definition of Done (sec 32), Nexus Loop (sec 34).
-   The "agents" are deterministic rule-based simulations. No LLMs, no network. */
+   The "agents" are deterministic rule-based simulations. The optional real-LLM
+   path lives in js/llm.js and never runs inside this engine; LLM claims enter
+   here only through addClaim, which enforces the same evidence gates. */
 (function (global) {
   'use strict';
   var D = global.TITAN_DATA;
@@ -172,12 +174,31 @@
     if (!isNonEmptyStr(c.evidence, 1000)) {
       return { ok: false, error: 'Evidence is required \u2014 no claim without evidence (' + SEC + '8).' };
     }
+    var category = c.category;
+    var limitations = (c.limitations || 'None recorded.').slice(0, 500);
+    var llmMeta = null;
+    if (c.llm !== undefined && c.llm !== null) {
+      if (!c.llm || typeof c.llm !== 'object' || typeof c.llm.model !== 'string' || typeof c.llm.excerpt !== 'string') {
+        return { ok: false, error: 'llm metadata must be {model, usage, excerpt}.' };
+      }
+      llmMeta = {
+        model: c.llm.model.slice(0, 200),
+        usage: (c.llm.usage && typeof c.llm.usage === 'object') ? { prompt_tokens: c.llm.usage.prompt_tokens || null, completion_tokens: c.llm.usage.completion_tokens || null, total_tokens: c.llm.usage.total_tokens || null } : null,
+        excerpt: c.llm.excerpt.slice(0, 500)
+      };
+      // LLM-sourced claims can reach at most SUPPORTED, never VERIFIED (Sec. 8).
+      if (category === 'VERIFIED') {
+        category = 'INFERRED';
+        limitations = (limitations + ' [Downgraded VERIFIED -> INFERRED: LLM output is never VERIFIED (Sec. 8).]').slice(0, 500);
+      }
+    }
     m.claims.push({
       id: 'c' + (m.claims.length + 1) + '-' + Math.random().toString(36).slice(2, 5),
-      claim: c.claim.trim(), category: c.category, evidence: c.evidence.trim(),
+      claim: c.claim.trim(), category: category, evidence: c.evidence.trim(),
       source: (c.source || 'Simulation engine').slice(0, 200),
       status: c.status || 'Recorded',
-      limitations: (c.limitations || 'None recorded.').slice(0, 500)
+      limitations: limitations,
+      llm: llmMeta
     });
     return { ok: true };
   }
