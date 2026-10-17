@@ -77,7 +77,7 @@ await sleep(2500);
 const title = await cdp2.evalExpr('document.title');
 check('title mentions TITAN ANTIGRAVITY', /TITAN ANTIGRAVITY/.test(title || ''), title);
 check('SIMULATION badge visible', (await cdp2.evalExpr('document.querySelector(".sim-badge")?.textContent || ""')).includes('SIMULATION'));
-check('6 nav tabs', await cdp2.evalExpr('document.querySelectorAll(".tab").length') === 6);
+check('7 nav tabs', await cdp2.evalExpr('document.querySelectorAll(".tab").length') === 7);
 
 // 2. Dashboard: stats + pipeline
 check('dashboard stat cards render', await cdp2.evalExpr('document.querySelectorAll(".stat-num").length') === 4);
@@ -157,13 +157,55 @@ await cdp2.evalExpr(`document.querySelector('[data-view="doctrine"]').click()`);
 await sleep(600);
 check('doctrine renders', await cdp2.evalExpr('document.body.innerText.includes("Honesty doctrine")'));
 
-// 10. Mobile overflow (only in mobile mode)
+// 10. LLM tab: settings panel, default simulation, key field never echoes, no-key fallback
+await cdp2.evalExpr(`document.querySelector('[data-view="llm"]').click()`);
+await sleep(800);
+check('LLM settings panel renders', await cdp2.evalExpr('document.body.innerText.includes("LLM settings")'));
+check('LLM default mode is simulation', await cdp2.evalExpr('document.querySelector(\'input[name="llmMode"][value="sim"]\').checked === true'));
+check('LLM model field prefilled with default', await cdp2.evalExpr('document.getElementById("llmModel").value === "nvidia/nemotron-3-ultra-550b-a55b"'));
+check('LLM key field is password type + empty', await cdp2.evalExpr('(()=>{const k=document.getElementById("llmKeyInput"); return k && k.type === "password" && k.value === "";})()'));
+await cdp2.evalExpr(`(() => { const k = document.getElementById('llmKeyInput'); k.value = 'TESTKEY-FAKE-1234567890ABCDEF'; document.querySelector('[data-action="llm-save-key"]').click(); })()`);
+await sleep(600);
+check('saved key is not echoed in UI', await cdp2.evalExpr('document.getElementById("llmKeyInput").value === "" && !document.body.innerText.includes("TESTKEY-FAKE-1234567890ABCDEF")'));
+check('key stored indicator shows YES', await cdp2.evalExpr('document.body.innerText.includes("Key stored in this browser: YES")'));
+await cdp2.evalExpr(`document.querySelector('[data-action="llm-clear-key"]').click()`);
+await sleep(500);
+check('key stored indicator shows NO after clear', await cdp2.evalExpr('document.body.innerText.includes("Key stored in this browser: NO")'));
+await cdp2.evalExpr(`document.querySelector('input[name="llmMode"][value="llm"]').click()`);
+await sleep(400);
+await cdp2.evalExpr(`document.querySelector('[data-view="missions"]').click()`);
+await sleep(800);
+await cdp2.evalExpr(`(() => {
+  document.getElementById('fTitle').value = 'LLM fallback mission';
+  document.getElementById('fObjective').value = 'Verify fallback when no key is stored.';
+  document.getElementById('fTaskType').value = 'General task';
+  document.querySelector('#intakeForm').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+})()`);
+await sleep(800);
+await cdp2.evalExpr(`(() => {
+  const cards = [...document.querySelectorAll('.mission-row')];
+  const card = cards.find(c => c.innerText.includes('LLM fallback mission'));
+  card?.querySelector('[data-action="select"]')?.click();
+})()`);
+await sleep(800);
+await cdp2.evalExpr(`document.querySelector('[data-action="run"]')?.click()`);
+await sleep(1000);
+check('no-key fallback banner names the cause', await cdp2.evalExpr('document.body.innerText.includes("No API key stored") && document.body.innerText.includes("deterministic simulation")'));
+check('fallback mission still completes deterministically', await cdp2.evalExpr('document.body.innerText.includes("READY_FOR_DONE")'));
+await cdp2.evalExpr(`document.querySelector('[data-view="llm"]').click()`);
+await sleep(600);
+await cdp2.evalExpr(`document.querySelector('input[name="llmMode"][value="sim"]').click()`);
+await sleep(400);
+await cdp2.evalExpr(`document.querySelector('[data-view="dashboard"]').click()`);
+await sleep(600);
+
+// 11. Mobile overflow (only in mobile mode)
 if (MODE === 'mobile') {
   const overflow = await cdp2.evalExpr('document.documentElement.scrollWidth');
   check('390px: no horizontal overflow', overflow <= 391, 'scrollWidth=' + overflow);
 }
 
-// 11. No console/page errors
+// 12. No console/page errors
 check('0 console/page errors', cdp2.consoleErrors.length === 0, JSON.stringify(cdp2.consoleErrors).slice(0, 500));
 
 console.log('RESULT ' + MODE + ': ' + passed + ' passed, ' + failed + ' failed');

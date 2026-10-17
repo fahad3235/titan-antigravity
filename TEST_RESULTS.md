@@ -1,8 +1,66 @@
-# TEST_RESULTS.md — titan-antigravity
+# TEST_RESULTS.md -- titan-antigravity
 
 Re-run after final edits (ASCII escaping): all green.
 
-## Unit tests — 105/105 passed
+## Enhancement -- Real LLM via OpenRouter (2026-10-17)
+
+New module `js/llm.js` + LLM tab in `js/app.js`. Direct browser calls to
+OpenRouter (CORS allowed by the provider) -- no local server, no proxy.
+Default model `nvidia/nemotron-3-ultra-550b-a55b` (free) + custom-model field.
+API key stored only in the browser's localStorage, password field, never
+echoed/logged/exported; Clear-key button; spend-limit warning in UI.
+
+### Unit tests -- 163/163 passed (was 105/105; +58 new)
+
+`node tests/run-node-tests.js`
+
+New coverage:
+- Model/key validation: default + custom ids accepted; empty/spaces/injection
+  chars rejected; key shape (length, no whitespace) accepted/rejected.
+- Prompts: system prompt carries mission + evidence doctrine + structured-JSON
+  shape; never mentions keys; user prompt carries mission.
+- Request building: payload shape, extras stripped, bad model/messages/role/
+  temperature rejected.
+- Response parsing: content + usage + 500-char excerpt; no-choices / empty
+  content rejected; missing usage tolerated.
+- Analysis parsing: 3 claims from structured JSON, sources
+  `openrouter:<model>`, evidence carries usage + excerpt, categories
+  INFERRED/ASSUMED only, actions -> ASSUMED, 6-claim cap, fenced JSON,
+  unstructured -> single fallback claim.
+- Error mapping: 400/401/402/403/404/429/502 -> named codes + fixes;
+  AbortError -> TIMEOUT; fetch failure -> UNREACHABLE.
+- Evidence gates: LLM metadata preserved; VERIFIED on an LLM claim
+  downgraded to INFERRED; bad metadata refused; non-LLM VERIFIED unchanged.
+- `callOpenRouter` with fake fetch: success content + usage; posts to the
+  OpenRouter URL; Authorization + HTTP-Referer + X-Title headers; key never
+  in request body; key never in error objects (401 path); 429 retries once
+  then succeeds; 429 twice -> RATE_LIMIT; fetch rejection -> UNREACHABLE;
+  missing fetch -> NO_FETCH; missing key -> NO_KEY.
+
+### Browser smoke -- desktop 30/30, mobile 31/31 passed (was 21/21 + 22/22)
+
+`node tests/smoke.mjs desktop` / `node tests/smoke.mjs mobile`
+(headless Chromium, file:// + raw CDP, 0 console/page errors in both runs)
+
+New coverage: 7 nav tabs; LLM settings panel renders; default mode is
+simulation; model field prefilled with the default; key field is password
+type + empty; saved fake key is not echoed in UI; stored indicator YES ->
+clear -> NO; LLM mode with no key -> fallback banner names the cause
+("No API key stored" + deterministic simulation) and the mission still
+reaches READY_FOR_DONE; mode restored to simulation.
+
+### Honest limitations (enhancement)
+
+- Live OpenRouter call UNTESTED: no real key was available, and none was
+  used, asked for, or stored. Provider path is covered by fake-fetch unit
+  tests only. First live call happens with the user's own key.
+- Key lives in localStorage: only in this browser, but any script on the
+  page could read it -- hence the spend-limit warning and Clear-key button.
+- Model availability on OpenRouter changes; unknown models 404 and fall back.
+
+## Original build results (kept for reference)
+
+## Unit tests -- 105/105 passed
 
 `node tests/run-node-tests.js`
 
@@ -34,7 +92,7 @@ Coverage:
 - Search/filter: roles by name/domain, skills by name/family.
 - Seed: 2 demo missions; first pre-run to READY_FOR_DONE, second DRAFT.
 
-## Browser smoke — desktop 21/21, mobile 22/22 passed
+## Browser smoke -- desktop 21/21, mobile 22/22 passed
 
 `node tests/smoke.mjs desktop` / `node tests/smoke.mjs mobile`
 (headless Chromium, file:// + raw CDP, 0 console/page errors in both runs)
@@ -50,7 +108,7 @@ ledger claims + category filter, doctrine view, 390px no horizontal overflow (mo
 - Routing: "Fix admin login redirect loop" -> Authentication redirect failure,
   primary HUNTER + IDENTITY. "Add payment integration" -> INTEGRATION.
 - Evidence gating: a claim with empty evidence is refused by addClaim, by
-  validateLedger, by doneCheck, and by importState — four independent gates.
+  validateLedger, by doneCheck, and by importState -- four independent gates.
 - State transitions: PENDING -> RUNNING -> SUCCEEDED -> (no exit);
   BLOCKED -> RUNNING only via authorizeMission.
 - Done-check: DRAFT mission lists "Loop has not completed" as a failure.

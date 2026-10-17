@@ -22,6 +22,7 @@ a{color:var(--cyan)}
 .brand-sub{font-size:11px;color:var(--muted);letter-spacing:.05em}
 .top-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .sim-badge{background:#3a2405;color:var(--amber);border:1px solid #7a5410;border-radius:999px;padding:5px 11px;font-size:11px;font-weight:800;letter-spacing:.05em}
+.sim-badge.llm{background:#0a2433;color:var(--cyan);border-color:#155e75}
 .btn{background:var(--cyan);color:#06121f;border:0;border-radius:10px;padding:9px 15px;font-weight:800}
 .btn:hover{filter:brightness(1.1)}
 .btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
@@ -94,6 +95,7 @@ td{border-bottom:1px solid #16203a;padding:8px 6px;vertical-align:top}
 .alert{background:#2a1a05;border:1px solid #6b5410;border-radius:12px;padding:12px 14px;margin:12px 0}
 .alert.error{background:#3a0d12;border-color:#7a1f2b}
 .alert.ok{background:#0c2a1c;border-color:#14532d}
+.warn{background:#2a1a05;border:1px solid #6b5410;border-radius:12px;padding:12px 14px;margin:12px 0}
 .empty{border:1px dashed var(--line);border-radius:var(--radius);padding:26px;text-align:center;color:var(--muted)}
 .flags{display:flex;flex-wrap:wrap;gap:8px}
 .flag{display:flex;gap:6px;align-items:center;background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:6px 10px;font-size:13px}
